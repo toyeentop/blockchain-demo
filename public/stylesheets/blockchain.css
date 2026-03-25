@@ -44,3 +44,7 @@ input {
   border: 0;
   z-index: 20000;
 }
+.block-card {
+  min-height: 300px;
+  word-wrap: break-word;
+}

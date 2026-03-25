@@ -1,0 +1,83 @@
+extends layout
+
+block content
+  .container
+    h1 Dataset Explorer
+
+    .row
+      .col-md-3
+        input#search.form-control(type='text', placeholder='Search location or drone')
+
+      .col-md-3
+        input#fromDate.form-control(type='date')
+
+      .col-md-3
+        input#toDate.form-control(type='date')
+
+      .col-md-3
+        button.btn.btn-primary(onclick='filterData()') Search
+
+    br
+
+    table.table.table-bordered.table-striped
+      thead
+        tr
+          th Flight ID
+          th Drone
+          th Location
+          th Department
+          th Date
+          th Block
+      tbody#dataTable
+
+  script.
+    let allData = [];
+
+    async function loadData() {
+      const res = await fetch('/api/transactions');
+      allData = await res.json();
+      renderTable(allData);
+    }
+
+    function renderTable(data) {
+      let html = '';
+
+      data.forEach(tx => {
+        html += `
+          <tr>
+            <td>${tx.flight_id}</td>
+            <td>${tx.drone_make_model}</td>
+            <td>${tx.location_area_surveyed}</td>
+            <td>${tx.department}</td>
+            <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
+            <td>${tx.blockIndex}</td>
+          </tr>
+        `;
+      });
+
+      document.getElementById('dataTable').innerHTML = html;
+    }
+
+    function filterData() {
+      const search = document.getElementById('search').value.toLowerCase();
+      const fromDate = document.getElementById('fromDate').value;
+      const toDate = document.getElementById('toDate').value;
+
+      const filtered = allData.filter(tx => {
+
+        const matchSearch =
+          tx.location_area_surveyed.toLowerCase().includes(search) ||
+          tx.drone_make_model.toLowerCase().includes(search);
+
+        const txDate = new Date(tx.timestamp);
+
+        const matchFrom = fromDate ? txDate >= new Date(fromDate) : true;
+        const matchTo = toDate ? txDate <= new Date(toDate) : true;
+
+        return matchSearch && matchFrom && matchTo;
+      });
+
+      renderTable(filtered);
+    }
+
+    loadData();

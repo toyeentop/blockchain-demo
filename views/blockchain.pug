@@ -2,46 +2,127 @@ extends layout
 
 block content
   .container-fluid
-    h1 #{__('Blockchain')}
-    .row.row-horizon
-      - var blocks = []
-      - blocks.push({block: 1, chain: 1, nonce: 11316, previous: '0000000000000000000000000000000000000000000000000000000000000000'})
-      - blocks.push({block: 2, chain: 1, nonce: 35230, previous: '000015783b764259d382017d91a36d206d0600e2cbb3567748f46a33fe9297cf'})
-      - blocks.push({block: 3, chain: 1, nonce: 12937, previous: '000012fa9b916eb9078f8d98a7864e697ae83ed54f5146bd84452cdafd043c19'})
-      - blocks.push({block: 4, chain: 1, nonce: 35990, previous: '0000b9015ce2a08b61216ba5a0778545bf4ddd7ceb7bbd85dd8062b29a9140bf'})
-      - blocks.push({block: 5, chain: 1, nonce: 56265, previous: '0000ae8bbc96cf89c68be6e10a865cc47c6c48a9ebec3c6cad729646cefaef83'})
-      each block in blocks
-        .col-xs-7
-          include includes/block
+    h1.text-center Blockchain Explorer (Interactive)
+
+    p.text-center.text-muted
+      | Edit any "Previous Hash" to simulate tampering. Changes propagate through the chain.
+
+    .text-center
+      button.btn.btn-success#refreshBtn Reset Chain
+
+    hr
+
+    .row#blockContainer
 
   script.
-    $(function() {
-      setup(1, 1);
-      setup(2, 1);
-      setup(3, 1);
-      setup(4, 1);
-      setup(5, 1);
-    });
+    (function () {
 
-    function getText(block, chain) {
-      return $('#block'+block+'chain'+chain+'number').val() +
-             $('#block'+block+'chain'+chain+'nonce').val() +
-             $('#block'+block+'chain'+chain+'data').val() +
-             $('#block'+block+'chain'+chain+'previous').val();
-    }
+      let blockchainData = [];
 
-    function setup(block, chain) {
-      updateHash(block, chain);
-      $('#block'+block+'chain'+chain+'number').bind('input propertychange', function() { updateChain(block, chain); });
-      $('#block'+block+'chain'+chain+'nonce').bind('input propertychange', function() { updateChain(block, chain); });
-      $('#block'+block+'chain'+chain+'data').bind('input propertychange', function() { updateChain(block, chain); });
-      $('#block'+block+'chain'+chain+'mineButton').click(function(e) {
-          e.preventDefault();
-          var l = Ladda.create(this);
-          l.start();
-          setTimeout(function() {
-              mine(block, chain, true);
-              l.stop();
-            }, 250); // give UI time to update
+      function loadBlockchain() {
+        fetch('/api/chain')
+          .then(res => res.json())
+          .then(data => {
+
+            blockchainData = data;
+
+            const container = document.getElementById('blockContainer');
+            container.innerHTML = '';
+
+            data.forEach((block, i) => {
+
+              const blockHtml = `
+                <div class="col-md-3">
+                  <div class="panel panel-default block-card" id="block-${i}">
+                    <div class="panel-heading text-center">
+                      <strong>Block ${block.index}</strong>
+                    </div>
+                    <div class="panel-body">
+
+                      <label>Hash</label>
+                      <input class="form-control" id="hash-${i}" value="${block.hash}" readonly>
+
+                      <label>Previous Hash</label>
+                      <input class="form-control editable" id="prev-${i}" value="${block.previousHash}" title="Changing this breaks the chain">
+
+                      <label>Merkle Root</label>
+                      <input class="form-control editable" id="merkle-${i}" value="${block.merkleRoot}">
+
+                      <label>Nonce</label>
+                      <input class="form-control editable" id="nonce-${i}" value="0">
+
+                      <br>
+                      <strong id="status-${i}"></strong>
+
+                    </div>
+                  </div>
+                </div>
+              `;
+
+              container.innerHTML += blockHtml;
+            });
+
+            document.querySelectorAll('.editable').forEach(input => {
+              input.addEventListener('input', validateLiveChain);
+            });
+
+            document.getElementById('prev-0').disabled = true;
+
+            validateLiveChain();
+          });
+      }
+
+      function validateLiveChain() {
+
+        let broken = false;
+
+        for (let i = 0; i < blockchainData.length; i++) {
+
+          const blockEl = document.getElementById(`block-${i}`);
+          const statusEl = document.getElementById(`status-${i}`);
+
+          blockEl.classList.remove('panel-success', 'panel-danger');
+
+          if (i === 0) {
+            statusEl.innerText = "GENESIS";
+            statusEl.style.color = "blue";
+            blockEl.classList.add('panel-success');
+            continue;
+          }
+
+          const prevInput = document.getElementById(`prev-${i}`).value;
+          const prevHash = document.getElementById(`hash-${i-1}`).value;
+
+          if (prevInput !== prevHash || broken) {
+
+            if (!broken) {
+              statusEl.innerText = "❌ FIRST BROKEN";
+            } else {
+              statusEl.innerText = "BROKEN";
+            }
+
+            broken = true;
+
+            setTimeout(() => {
+              blockEl.classList.add('panel-danger');
+            }, i * 150);
+
+            statusEl.style.color = "red";
+
+          } else {
+            blockEl.classList.add('panel-success');
+            statusEl.innerText = "VALID";
+            statusEl.style.color = "green";
+          }
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        loadBlockchain();
+
+        document.getElementById('refreshBtn').addEventListener('click', () => {
+          loadBlockchain();
         });
-    }
+      });
+
+    })();

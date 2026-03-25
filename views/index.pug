@@ -1,13 +1,83 @@
 extends layout
 
 block content
-  a(href='https://github.com/anders94/blockchain-demo/')
-    img.github-ribbon(src='/images/fork-me-on-github-ribbon.png', alt='Fork me on GitHub')
   .container
-    h1 Blockchain Demo
-    .embed-responsive.embed-responsive-16by9
-      iframe.embed-responsive-item(src='https://www.youtube.com/embed/_160oMzblY8')
+    h1.text-center Blockchain Drone Explorer
+
+    hr
+
+    // =========================
+    // DATASET EXPLORER
+    // =========================
+    h2 Dataset Explorer
+
+    .row
+      .col-md-4
+        input#search.form-control(type="text", placeholder="Search (drone, location, etc)")
+      .col-md-3
+        input#startDate.form-control(type="date")
+      .col-md-3
+        input#endDate.form-control(type="date")
+      .col-md-2
+        button.btn.btn-primary(onclick="searchData()") Search
+
     br
-    p.pull-right by 
-      a(href='http://andersbrownworth.com/') Anders Brownworth 
-      | 1K3NvcuZzVTueHW1qhkG2Cm3viRkh2EXJp
+
+    table.table.table-bordered
+      thead
+        tr
+          th Flight ID
+          th Department
+          th Drone
+          th Location
+          th Date
+      tbody#datasetTable
+
+    hr
+
+    // =========================
+    // BLOCK EXPLORER
+    // =========================
+    h2 Block Explorer
+
+    button.btn.btn-success(onclick="loadChain()") Load Blockchain
+
+    br
+    br
+
+    .row#blockCards
+
+    hr
+
+    // =========================
+    // BLOCK DETAILS
+    // =========================
+    h3 Block Details
+
+    table.table.table-striped
+      thead
+        tr
+          th Flight ID
+          th Department
+          th Drone
+          th Location
+      tbody#blockTable
+
+    hr
+
+    // =========================
+    // VERIFY FLIGHT
+    // =========================
+    h2 Verify Flight
+
+    input#txHash.form-control(type="text", placeholder="Enter txHash")
+    br
+
+    button.btn.btn-warning(onclick="getProof()") Get Proof
+    button.btn.btn-danger(onclick="verifyTx()") Verify
+
+    br
+    br
+
+    pre#proofResult
+    h3#verifyResult

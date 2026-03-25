@@ -1,0 +1,50 @@
+extends layout
+
+block content
+  .container
+    h1 Verify Flight
+
+    .form-group
+      label Transaction Hash
+      input.form-control#txHashInput(type="text", placeholder="Paste txHash here")
+
+    br
+    button.btn.btn-primary#verifyBtn Verify Flight
+
+    hr
+
+    #resultBox
+
+  script.
+    document.getElementById('verifyBtn').addEventListener('click', async () => {
+
+      const txHash = document.getElementById('txHashInput').value;
+
+      const res = await fetch('/api/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txHash })
+      });
+
+      const data = await res.json();
+
+      const box = document.getElementById('resultBox');
+
+      if (data.valid) {
+        box.innerHTML = `
+          <div class="alert alert-success">
+            ✅ VERIFIED<br><br>
+            Block: ${data.blockIndex}<br>
+            Merkle Root: ${data.merkleRoot}
+          </div>
+        `;
+      } else {
+        box.innerHTML = `
+          <div class="alert alert-danger">
+            ❌ INVALID<br>
+            ${data.error || ''}
+          </div>
+        `;
+      }
+
+    });

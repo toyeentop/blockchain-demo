@@ -1,29 +1,77 @@
 const crypto = require('crypto');
-const buildMerkleTree = require('./merkleTree');
+const { buildMerkleTree, getMerkleRoot } = require('./merkleTree');
 
-function calculateHash(index, timestamp, merkleRoot, previousHash) {
-
+// ==============================
+// HASH FUNCTION (BLOCK HEADER)
+// ==============================
+function calculateHash(index, timestamp, previousHash, merkleRoot, nonce) {
     return crypto
         .createHash('sha256')
-        .update(index + timestamp + merkleRoot + previousHash)
+        .update(index + timestamp + previousHash + merkleRoot + nonce)
         .digest('hex');
 }
 
-function createBlock(index, transactions, previousHash) {
+
+// ==============================
+// MINE BLOCK (PROOF OF WORK)
+// ==============================
+function mineBlock(index, transactions, previousHash, difficulty = 2) {
 
     const timestamp = new Date().toISOString();
 
-    const merkleRoot = buildMerkleTree(transactions);
+    // =========================
+    // BUILD MERKLE ROOT
+    // =========================
+    const txHashes = transactions.length > 0
+        ? transactions.map(tx => tx.txHash)
+        : ["EMPTY"]; // safety fallback
 
-    const hash = calculateHash(index, timestamp, merkleRoot, previousHash);
+    const tree = buildMerkleTree(txHashes);
+    const merkleRoot = getMerkleRoot(tree);
 
+    let nonce = 0;
+    let hash = "";
+
+    const target = "0".repeat(difficulty);
+
+    console.log(`⛏️ Mining block ${index}...`);
+
+    // =========================
+    // PROOF OF WORK LOOP
+    // =========================
+    do {
+        nonce++;
+        hash = calculateHash(
+            index,
+            timestamp,
+            previousHash,
+            merkleRoot,
+            nonce
+        );
+    } while (!hash.startsWith(target));
+
+    console.log(`✅ Block ${index} mined`);
+    console.log(`Nonce: ${nonce}`);
+    console.log(`Hash: ${hash}\n`);
+
+    // =========================
+    // RETURN BLOCK OBJECT
+    // =========================
     return {
         index,
         timestamp,
-        transactions,
         previousHash,
+        merkleRoot,                 // REQUIRED
+        transactions,
+        txCount: transactions.length, // REQUIRED
+        nonce,
+        difficulty,
         hash
     };
 }
 
-module.exports = createBlock;
+
+// ==============================
+// EXPORT
+// ==============================
+module.exports = mineBlock;

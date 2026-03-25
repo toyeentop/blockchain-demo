@@ -34,20 +34,16 @@ html
             span.icon-bar
             span.icon-bar
             span.icon-bar
-          a.navbar-brand(href='/') #{__('Blockchain Demo')}
+          a.navbar-brand(href='/') Drone Blockchain System
         #navbar.collapse.navbar-collapse
           ul.nav.navbar-nav.navbar-right
-            li(class={active: page === 'hash'})
-              a(href='/hash') #{__('Hash')}
-            li(class={active: page === 'block'})
-              a(href='/block') #{__('Block')}
             li(class={active: page === 'blockchain'})
-              a(href='/blockchain') #{__('Blockchain')}
-            li(class={active: page === 'distributed'})
-              a(href='/distributed') #{__('Distributed')}
-            li(class={active: page === 'tokens'})
-              a(href='/tokens') #{__('Tokens')}
-            li(class={active: page === 'coinbase'})
-              a(href='/coinbase') #{__('Coinbase')}
+              a(href='/blockchain') Blockchain
+            li(class={active: page === 'dataset'})
+              a(href='/dataset') Dataset Explorer
+            li(class={active: page === 'blockExplorer'})
+              a(href='/block-explorer') Block Explorer
+            li(class={active: page === 'verify'})
+              a(href='/verify') Verify Flight
 
     block content

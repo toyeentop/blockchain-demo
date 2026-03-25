@@ -1,85 +1,156 @@
-/////////////////////////
-// global variable setup
-/////////////////////////
+// ==========================
+// LOAD BLOCKCHAIN (CARDS)
+// ==========================
+async function loadChain() {
+    const res = await fetch('/api/chain');
+    const data = await res.json();
 
-// number of zeros required at front of hash
-var difficultyMajor = 4;
+    const container = document.getElementById('blockCards');
+    container.innerHTML = '';
 
-// 0-15, maximum (decimal) value of the hex digit after the front
-// 15 means any hex character is allowed next
-// 7  means next bit must be 0 (because 0x7=0111),
-//    (so the bit-strength is doubled)
-// 0  means only 0x0 can be next
-//    (equivalent to one more difficultyMajor)
-var difficultyMinor = 15;  
+    data.forEach(block => {
+        const div = document.createElement('div');
+        div.className = "col-md-3";
 
-var maximumNonce = 8;  // limit the nonce so we don't mine too long
-var pattern = '';
-for (var x=0; x<difficultyMajor; x++) {
-  pattern += '0';     // every additional required 0
-  maximumNonce *= 16; // takes 16x longer to mine
-}
-// at this point in the setup, difficultyMajor=4
-// yields pattern '0000' and maximumNonce 8*16^4=524288
+        div.innerHTML = `
+            <div class="panel panel-default" style="cursor:pointer;">
+                <div class="panel-heading">
+                    <strong>Block ${block.index}</strong>
+                </div>
+                <div class="panel-body">
+                    <small>${block.hash.substring(0, 20)}...</small><br>
+                    TX Count: ${block.txCount}
+                </div>
+            </div>
+        `;
 
-// add one more hex-char for the minor difficulty
-pattern += difficultyMinor.toString(16);
-var patternLen = pattern.length; // == difficultyMajor+1
+        div.onclick = () => loadBlock(block.hash);
 
-if      (difficultyMinor == 0) { maximumNonce *= 16; } // 0000 require 4 more 0 bits
-else if (difficultyMinor == 1) { maximumNonce *= 8;  } // 0001 require 3 more 0 bits
-else if (difficultyMinor <= 3) { maximumNonce *= 4;  } // 0011 require 2 more 0 bits
-else if (difficultyMinor <= 7) { maximumNonce *= 2;  } // 0111 require 1 more 0 bit
-// else don't bother increasing maximumNonce, it already started with 8x padding
-
-
-
-/////////////////////////
-// functions
-/////////////////////////
-function sha256(block, chain) {
-  // calculate a SHA256 hash of the contents of the block
-  return CryptoJS.SHA256(getText(block, chain));
+        container.appendChild(div);
+    });
 }
 
-function updateState(block, chain) {
-  // set the well background red or green for this block
-  if ($('#block'+block+'chain'+chain+'hash').val().substr(0, patternLen) <= pattern) {
-      $('#block'+block+'chain'+chain+'well').removeClass('well-error').addClass('well-success');
-  }
-  else {
-      $('#block'+block+'chain'+chain+'well').removeClass('well-success').addClass('well-error');
-  }
+// ==========================
+// LOAD BLOCK DETAILS (TABLE)
+// ==========================
+async function loadBlock(hash) {
+    const res = await fetch(`/api/block/${hash}`);
+    const block = await res.json();
+
+    const table = document.getElementById('blockTable');
+    table.innerHTML = '';
+
+    block.transactions.forEach(tx => {
+        const row = `
+            <tr>
+                <td>${tx.flight_id}</td>
+                <td>${tx.department}</td>
+                <td>${tx.drone_make_model}</td>
+                <td>${tx.location_area_surveyed}</td>
+            </tr>
+        `;
+        table.innerHTML += row;
+    });
 }
 
-function updateHash(block, chain) {
-  // update the SHA256 hash value for this block
-  $('#block'+block+'chain'+chain+'hash').val(sha256(block, chain));
-  updateState(block, chain);
-}
+// ==========================
+// DATASET SEARCH + DATE FILTER
+// ==========================
+async function searchData() {
+    const query = document.getElementById('search').value.toLowerCase();
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
 
-function updateChain(block, chain) {
-  // update all blocks walking the chain from this block to the end
-  for (var x = block; x <= 5; x++) {
-    if (x > 1) {
-      $('#block'+x+'chain'+chain+'previous').val($('#block'+(x-1).toString()+'chain'+chain+'hash').val());
+    const res = await fetch('/api/chain');
+    const chain = await res.json();
+
+    let results = [];
+
+    for (const block of chain) {
+        const full = await fetch(`/api/block/${block.hash}`);
+        const b = await full.json();
+
+        b.transactions.forEach(tx => {
+
+            const txDate = new Date(tx.timestamp);
+
+            const matchesQuery =
+                JSON.stringify(tx).toLowerCase().includes(query);
+
+            const matchesDate =
+                (!startDate || txDate >= new Date(startDate)) &&
+                (!endDate || txDate <= new Date(endDate));
+
+            if (matchesQuery && matchesDate) {
+                results.push(tx);
+            }
+        });
     }
-    updateHash(x, chain);
-  }
+
+    const table = document.getElementById('datasetTable');
+    table.innerHTML = '';
+
+    results.forEach(tx => {
+        const row = `
+            <tr>
+                <td>${tx.flight_id}</td>
+                <td>${tx.department}</td>
+                <td>${tx.drone_make_model}</td>
+                <td>${tx.location_area_surveyed}</td>
+                <td>${new Date(tx.timestamp).toLocaleDateString()}</td>
+            </tr>
+        `;
+        table.innerHTML += row;
+    });
 }
 
-function mine(block, chain, isChain) {
-  for (var x = 0; x <= maximumNonce; x++) {
-    $('#block'+block+'chain'+chain+'nonce').val(x);
-    $('#block'+block+'chain'+chain+'hash').val(sha256(block, chain));
-    if ($('#block'+block+'chain'+chain+'hash').val().substr(0, patternLen) <= pattern) {
-      if (isChain) {
-        updateChain(block, chain);
-      }
-      else {
-        updateState(block, chain);
-      }
-      break;
+// ==========================
+// GET MERKLE PROOF
+// ==========================
+async function getProof() {
+    const txHash = document.getElementById('txHash').value;
+
+    const res = await fetch(`/api/proof/${txHash}`);
+    const data = await res.json();
+
+    if (data.error) {
+        document.getElementById('proofResult').innerText = "❌ Not found";
+        return;
     }
-  }
+
+    window.currentProof = data;
+
+    document.getElementById('proofResult').innerText =
+        JSON.stringify(data, null, 2);
+}
+
+// ==========================
+// VERIFY TRANSACTION
+// ==========================
+async function verifyTx() {
+
+    if (!window.currentProof) {
+        document.getElementById('verifyResult').innerText =
+            "⚠️ Get proof first!";
+        return;
+    }
+
+    const txHash = document.getElementById('txHash').value;
+
+    const res = await fetch('/api/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            txHash,
+            proof: window.currentProof.proof,
+            merkleRoot: window.currentProof.merkleRoot
+        })
+    });
+
+    const data = await res.json();
+
+    document.getElementById('verifyResult').innerText =
+        data.valid
+            ? "✅ VALID TRANSACTION"
+            : "❌ INVALID TRANSACTION";
 }

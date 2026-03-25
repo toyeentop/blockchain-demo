@@ -1,23 +1,28 @@
+const blockchainRoutes = require('./routes/blockchain');
 const createBlock = require('./block');
-const buildMerkleTree = require('./merkleTree');
-const signTransaction = require('./signature');
+const {
+    buildMerkleTree,
+    getMerkleRoot,
+    getMerkleProof,
+    verifyMerkleProof
+} = require('./merkleTree');
+
+const { signTransaction, verifySignature } = require('./signature');
 const generateTransactions = require('./transactionGenerator');
 const loadFlights = require('./datasetLoader');
 
 const crypto = require('crypto');
 
-var express = require('express');
-var i18n = require('i18n');
-var path = require('path');
-var favicon = require('serve-favicon');
-var logger = require('morgan');
-var cookieParser = require('cookie-parser');
-var bodyParser = require('body-parser');
+const express = require('express');
+const path = require('path');
+const favicon = require('serve-favicon');
+const logger = require('morgan');
+const cookieParser = require('cookie-parser');
+const bodyParser = require('body-parser');
 
-var routes = require('./routes/index');
+const routes = require('./routes/index');
 
-var app = express();
-
+const app = express();
 
 // ==============================
 // EXPRESS SETUP
@@ -31,193 +36,222 @@ app.use(logger('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(i18n.init);
 app.use(express.static(path.join(__dirname, 'public')));
-
+app.use(express.json());
 app.use('/', routes);
-
+app.use('/api', blockchainRoutes);
 
 // ==============================
-// ERROR HANDLING
+// HELPER: CANONICALIZE (MUST MATCH GENERATOR)
 // ==============================
 
-app.use(function(req, res, next) {
-  var err = new Error('Not Found');
-  err.status = 404;
-  next(err);
-});
-
-if (app.get('env') === 'development') {
-  app.use(function(err, req, res, next) {
-    res.status(err.status || 500);
-    res.render('error', {
-      message: err.message,
-      error: err
-    });
-  });
+function canonicalize(obj) {
+    return Object.keys(obj)
+        .sort()
+        .reduce((result, key) => {
+            result[key] = obj[key];
+            return result;
+        }, {});
 }
 
-app.use(function(err, req, res, next) {
-  res.status(err.status || 500);
-  res.render('error', {
-    message: err.message,
-    error: {}
-  });
-});
-
-i18n.configure({
-  locales:['en','de','es','fr-CA','hi','ja','ko','nl','pl','pt','zh-CN','hu','id','th'],
-  directory: __dirname + '/locales'
-});
-
-module.exports = app;
-
-
-
 // ==============================
-// BLOCKCHAIN FUNCTIONS
+// HASH FUNCTION
 // ==============================
 
-function calculateHash(index, timestamp, merkleRoot, previousHash) {
-
+function calculateHash(index, timestamp, previousHash, merkleRoot, nonce) {
     return crypto
         .createHash('sha256')
-        .update(index + timestamp + merkleRoot + previousHash)
+        .update(index + timestamp + previousHash + merkleRoot + nonce)
         .digest('hex');
 }
 
+// ==============================
+// VALIDATE BLOCKCHAIN
+// ==============================
 
 function validateBlockchain(blockchain) {
 
     for (let i = 1; i < blockchain.length; i++) {
 
-        const currentBlock = blockchain[i];
-        const previousBlock = blockchain[i - 1];
+        const current = blockchain[i];
+        const previous = blockchain[i - 1];
 
-        const merkleRoot = buildMerkleTree(currentBlock.transactions);
-
-        const recalculatedHash = calculateHash(
-            currentBlock.index,
-            currentBlock.timestamp,
-            merkleRoot,
-            currentBlock.previousHash
-        );
-
-        if (currentBlock.hash !== recalculatedHash) {
-
-            console.log("Block", currentBlock.index, "has been tampered with!");
+        // 🔗 Check chain linkage
+        if (current.previousHash !== previous.hash) {
+            console.log("❌ Chain broken at block", current.index);
             return false;
-
         }
 
-        if (currentBlock.previousHash !== previousBlock.hash) {
+        // 🌳 Check Merkle root
+        const txHashes = current.transactions.map(tx => tx.txHash);
+        const tree = buildMerkleTree(txHashes);
+        const root = getMerkleRoot(tree);
 
-            console.log("Blockchain linkage broken at block", currentBlock.index);
+        if (current.merkleRoot !== root) {
+            console.log("❌ Merkle root mismatch at block", current.index);
             return false;
+        }
 
+        // 🔐 Check block hash
+        const recalculatedHash = calculateHash(
+            current.index,
+            current.timestamp,
+            current.previousHash,
+            current.merkleRoot,
+            current.nonce
+        );
+
+        if (current.hash !== recalculatedHash) {
+            console.log("❌ Block tampered:", current.index);
+            return false;
+        }
+
+        // ⛏️ Check Proof of Work
+        const target = "0".repeat(current.difficulty || 2);
+        if (!current.hash.startsWith(target)) {
+            console.log("❌ Invalid PoW at block", current.index);
+            return false;
+        }
+
+        // 🔎 Validate transactions (FIXED)
+        for (const tx of current.transactions) {
+
+            const txData = {
+                flight_id: tx.flight_id,
+                timestamp: tx.timestamp,
+                department: tx.department,
+                drone_make_model: tx.drone_make_model,
+                location_area_surveyed: tx.location_area_surveyed,
+                start_time: tx.start_time,
+                end_time: tx.end_time,
+                data_collected: tx.data_collected,
+                source_url: tx.source_url,
+                snapshot_hash: tx.snapshot_hash
+            };
+
+            const canonicalTx = canonicalize(txData);
+
+            const recalculatedTxHash = crypto
+                .createHash('sha256')
+                .update(JSON.stringify(canonicalTx))
+                .digest('hex');
+
+            if (tx.txHash !== recalculatedTxHash) {
+                console.log("❌ Transaction data tampered in block", current.index);
+                return false;
+            }
+
+            if (!verifySignature(tx)) {
+                console.log("❌ Invalid signature in block", current.index);
+                return false;
+            }
         }
     }
 
     return true;
 }
 
+// ==============================
+// VERIFY TRANSACTION
+// ==============================
 
-
-function verifyTransactionInBlock(blockchain, transactionId) {
+function verifyTransactionInBlock(blockchain, txId) {
 
     for (const block of blockchain) {
+        const found = block.transactions.find(t => t.flight_id === txId);
 
-        const tx = block.transactions.find(
-            t => t.transaction.id === transactionId
-        );
-
-        if (tx) {
-
-            const merkleRoot = buildMerkleTree(block.transactions);
-
-            console.log(
-                `Transaction ${transactionId} found in block ${block.index}`
-            );
-
-            return merkleRoot ? true : false;
+        if (found) {
+            console.log(`Transaction ${txId} found in block ${block.index}`);
+            return true;
         }
     }
 
     return false;
 }
 
-
-
 // ==============================
-// BUILD THE BLOCKCHAIN
+// BUILD BLOCKCHAIN
 // ==============================
 
 loadFlights().then(flights => {
 
     const transactions = generateTransactions(flights);
-
     const signedTransactions = transactions.map(tx => signTransaction(tx));
-
-    const merkleRoot = buildMerkleTree(signedTransactions);
 
     const blockchain = [];
 
     const blockSize = 20;
+    const difficulty = 4;
 
     let previousHash = "0000";
-    let blockIndex = 1;
+    let index = 1;
 
     for (let i = 0; i < signedTransactions.length; i += blockSize) {
 
-        const blockTransactions =
-            signedTransactions.slice(i, i + blockSize);
+        const blockTx = signedTransactions.slice(i, i + blockSize);
 
-        const block = createBlock(
-            blockIndex,
-            blockTransactions,
-            previousHash
-        );
+        const txHashes = blockTx.map(tx => tx.txHash);
+        const tree = buildMerkleTree(txHashes);
+        const merkleRoot = getMerkleRoot(tree);
+
+        const block = createBlock(index, blockTx, previousHash, difficulty);
+
+        block.merkleRoot = merkleRoot;
 
         blockchain.push(block);
 
         previousHash = block.hash;
-
-        blockIndex++;
+        index++;
     }
 
-console.log("\nBlockchain Summary:");
-blockchain.forEach(block => {
-    console.log(`Block ${block.index} | Tx: ${block.transactions.length} | Hash: ${block.hash.substring(0,10)}...`);
-});
+    blockchainRoutes.setBlockchain(blockchain);
+    blockchainRoutes.setValidator(validateBlockchain);
 
+    console.log("\n==============================");
+    console.log("🚀 BLOCKCHAIN CREATED");
+    console.log("==============================");
 
-    // ==============================
-    // OUTPUT
-    // ==============================
-
-    console.log("\nMerkle Root:");
-    console.log(merkleRoot);
-
-
-    console.log("\nBlockchain Created:");
-    console.dir(blockchain, { depth: null });
-
-
-    // ==============================
-    // VALIDATE CHAIN
-    // ==============================
-
+    // ✅ BEFORE tampering
     const isValid = validateBlockchain(blockchain);
-
     console.log("\nBlockchain valid:", isValid);
 
+    // ✅ Transaction check
+    const txFound = verifyTransactionInBlock(blockchain, "FLIGHT_1");
+    console.log("\nTransaction inclusion verified:", txFound);
+
+    // ✅ Merkle proof
+    const testBlock = blockchain[1];
+    const testTx = testBlock.transactions[0];
+
+    const txHashes = testBlock.transactions.map(tx => tx.txHash);
+    const proof = getMerkleProof(txHashes, testTx.txHash);
+
+    console.log("\n🔎 Merkle Proof:");
+    console.log(proof);
+
+    const isProofValid = verifyMerkleProof(
+        testTx.txHash,
+        proof,
+        testBlock.merkleRoot
+    );
+
+    console.log("\n✅ Merkle Proof Valid:", isProofValid);
 
     // ==============================
-    // VERIFY TRANSACTION
+    // ❌ TAMPER TEST
     // ==============================
+    //console.log("\n--- TAMPER TEST ---");
 
-    const proof = verifyTransactionInBlock(blockchain, "FLIGHT_1");
+    //blockchain[1].transactions[0].department = "HACKED";
 
-    console.log("\nTransaction inclusion verified:", proof);
+   // const tamperedValid = validateBlockchain(blockchain);
+    //console.log("Tampered blockchain valid:", tamperedValid);
 
 });
+
+// ==============================
+// EXPORT
+// ==============================
+
+module.exports = app;
+module.exports.validateBlockchain = validateBlockchain;

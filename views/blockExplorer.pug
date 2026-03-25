@@ -1,0 +1,82 @@
+extends layout
+
+block content
+  .container
+    h1 Block Explorer
+
+    .row#blocksRow
+
+    hr
+
+    h3 Block Details
+    pre#blockDetails(style="background:#111; color:#0f0; padding:15px; white-space: pre-wrap;")
+
+  script.
+    async function loadBlocks() {
+      try {
+        const res = await fetch('/api/chain');
+        const blocks = await res.json();
+
+        let html = '';
+
+        blocks.forEach(block => {
+          html += `
+            <div class="col-md-3">
+              <div class="panel panel-default" style="cursor:pointer; margin-bottom:15px;"
+                   onclick="loadBlock('${block.hash}')">
+                <div class="panel-heading">
+                  <strong>Block ${block.index}</strong>
+                </div>
+                <div class="panel-body">
+                  <small><b>Hash:</b></small><br>
+                  ${block.hash.substring(0, 20)}...<br><br>
+                  <small><b>Transactions:</b></small> ${block.txCount}
+                </div>
+              </div>
+            </div>
+          `;
+        });
+
+        document.getElementById('blocksRow').innerHTML = html;
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadBlock(hash) {
+      try {
+        const res = await fetch('/api/block/' + hash);
+        const block = await res.json();
+
+        let details = "";
+
+        details += "==============================\n";
+        details += "BLOCK " + block.index + "\n";
+        details += "==============================\n\n";
+
+        details += "Hash: " + block.hash + "\n";
+        details += "Previous: " + block.previousHash + "\n";
+        details += "Merkle Root: " + block.merkleRoot + "\n\n";
+
+        details += "------------------------------\n";
+        details += "TRANSACTIONS\n";
+        details += "------------------------------\n";
+
+        block.transactions.forEach(tx => {
+          details += "\nFlight: " + tx.flight_id + "\n";
+          details += "Drone: " + tx.drone_make_model + "\n";
+          details += "Department: " + tx.department + "\n";
+          details += "Location: " + tx.location_area_surveyed + "\n";
+          details += "TxHash: " + tx.txHash + "\n";
+          details += "------------------------------\n";
+        });
+
+        document.getElementById('blockDetails').textContent = details;
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    loadBlocks();
