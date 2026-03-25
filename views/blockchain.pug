@@ -9,16 +9,32 @@ block content
 
     .text-center
       button.btn.btn-success#refreshBtn Reset Chain
+      button.btn.btn-warning#forkBtn(style="margin-left:10px") Simulate Fork
 
     hr
 
     .row#blockContainer
+
+    hr
+    h3.text-center Fork Simulation
+
+    .row
+      .col-md-6
+        h4.text-center Chain A
+        #chainA
+
+      .col-md-6
+        h4.text-center Chain B (Longest Chain)
+        #chainB
 
   script.
     (function () {
 
       let blockchainData = [];
 
+      // ==============================
+      // LOAD BLOCKCHAIN
+      // ==============================
       function loadBlockchain() {
         fetch('/api/chain')
           .then(res => res.json())
@@ -62,16 +78,24 @@ block content
               container.innerHTML += blockHtml;
             });
 
+            // attach listeners
             document.querySelectorAll('.editable').forEach(input => {
               input.addEventListener('input', validateLiveChain);
             });
 
-            document.getElementById('prev-0').disabled = true;
+            // disable genesis prev
+            if (document.getElementById('prev-0')) {
+              document.getElementById('prev-0').disabled = true;
+            }
 
             validateLiveChain();
-          });
+          })
+          .catch(err => console.error("Error loading blockchain:", err));
       }
 
+      // ==============================
+      // LIVE VALIDATION
+      // ==============================
       function validateLiveChain() {
 
         let broken = false;
@@ -80,6 +104,8 @@ block content
 
           const blockEl = document.getElementById(`block-${i}`);
           const statusEl = document.getElementById(`status-${i}`);
+
+          if (!blockEl || !statusEl) continue;
 
           blockEl.classList.remove('panel-success', 'panel-danger');
 
@@ -117,12 +143,55 @@ block content
         }
       }
 
+      // ==============================
+      // FORK SIMULATION
+      // ==============================
+      function simulateFork() {
+
+        if (!blockchainData.length) return;
+
+        const chainA = blockchainData.slice(0, 3);
+        const chainB = blockchainData.slice(0, 4); // longer chain
+
+        function renderChain(chain, containerId) {
+          let html = '';
+
+          chain.forEach(block => {
+            html += `
+              <div class="panel panel-default">
+                <div class="panel-heading">
+                  Block ${block.index}
+                </div>
+                <div class="panel-body">
+                  <small>${block.hash.substring(0, 20)}...</small>
+                </div>
+              </div>
+            `;
+          });
+
+          const el = document.getElementById(containerId);
+          if (el) el.innerHTML = html;
+        }
+
+        renderChain(chainA, 'chainA');
+        renderChain(chainB, 'chainB');
+      }
+
+      // ==============================
+      // INIT
+      // ==============================
       document.addEventListener("DOMContentLoaded", () => {
+
         loadBlockchain();
 
         document.getElementById('refreshBtn').addEventListener('click', () => {
           loadBlockchain();
+          document.getElementById('chainA').innerHTML = '';
+          document.getElementById('chainB').innerHTML = '';
         });
+
+        document.getElementById('forkBtn').addEventListener('click', simulateFork);
+
       });
 
     })();
